@@ -1,0 +1,110 @@
+name: Build
+
+on:
+  push:
+    branches:
+    - main
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+env:
+  spirv-tools-version: 2026.2
+  spirv-headers-version: 1.4.350.0
+  vulkan-loader-version: 1.4.354
+  mesa-commit: 1e025e3e0a68a58308416093ea82038e7e9aea26
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+    - name: Checkout Source
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Setup Cache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        create-symlink: true
+
+    - name: Install Build Dependencies
+      run: |
+        brew install cmake meson pkg-config llvm spirv-llvm-translator libclc
+        pip3 install --break-system-packages mako packaging pyyaml
+
+    - name: Build SPIRV-Tools
+      run: |
+        git clone -b v${{ env.spirv-tools-version }} --depth 1 https://github.com/KhronosGroup/SPIRV-Tools
+        git clone -b vulkan-sdk-${{ env.spirv-headers-version }} --depth 1 https://github.com/KhronosGroup/SPIRV-Headers SPIRV-Tools/external/SPIRV-Headers
+        cmake -S SPIRV-Tools -B SPIRV-Tools/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        cmake --build SPIRV-Tools/build --parallel$(sysctl -n hw.ncpu)
+        sudo cmake --install SPIRV-Tools/build
+
+    - name: Build Vulkan-Loader
+      run: |
+        git clone -b v${{ env.vulkan-loader-version }} --depth 1 https://github.com/KhronosGroup/Vulkan-Loader
+        cmake -S Vulkan-Loader -B Vulkan-Loader/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DUPDATE_DEPS=ON
+        cmake --build Vulkan-Loader/build --parallel$(sysctl -n hw.ncpu)
+
+    - name: Checkout Mesa
+      run: |
+        git clone --revision ${{ env.mesa-commit }} --depth 1 https://gitlab.freedesktop.org/squidbus/mesa.git
+
+    - name: Build Mesa (ARM64)
+      run: |
+        meson setup mesa/build-arm64 mesa --buildtype=release -Dplatforms=macos -Dvulkan-drivers=kosmickrisp -Dgallium-drivers= -Dopengl=false -Dzstd=disabled -Dinstall-mesa-clc=true -Dinstall-precomp-compiler=true --prefer-static --cross-file=.github/workflows/mesa-arm64.ini
+        meson compile -C mesa/build-arm64
+        sudo meson install -C mesa/build-arm64
+
+    - name: Build Mesa (x86_64)
+      run: |
+        meson setup mesa/build-x86_64 mesa --buildtype=release -Dplatforms=macos -Dvulkan-drivers=kosmickrisp -Dgallium-drivers= -Dopengl=false -Dzstd=disabled -Dmesa-clc=system -Dprecomp-compiler=system --prefer-static --cross-file=.github/workflows/mesa-x86_64.ini
+        meson compile -C mesa/build-x86_64
+
+    - name: Build Mesa (Universal)
+      run: |
+        mkdir mesa/build
+        lipo -create -output mesa/build/libvulkan_kosmickrisp.dylib mesa/build-arm64/src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib mesa/build-x86_64/src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+        cp mesa/build-arm64/src/kosmickrisp/vulkan/kosmickrisp_mesa_icd.aarch64.json mesa/build/kosmickrisp_mesa_icd.json
+        sed -i '' 's/\/opt\/homebrew\/lib/./g' mesa/build/kosmickrisp_mesa_icd.json
+
+    - name: Package Build
+      run: |
+        mkdir upload
+        cp Vulkan-Loader/build/loader/libvulkan.dylib upload
+        cp mesa/build/kosmickrisp_mesa_icd.json upload
+        cp mesa/build/libvulkan_kosmickrisp.dylib upload
+
+    - name: Upload Build
+      uses: actions/upload-artifact@v7
+      with:
+        name: kosmickrisp-universal
+        path: upload/
+
+  create-release:
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: artifacts
+
+    - name: Bundle Artifacts
+      run: |
+        (cd artifacts && zip -r ../kosmickrisp-universal.zip *)
+
+    - name: Create Release
+      uses: ncipollo/release-action@v1
+      with:
+        name: "Automated CI Build (${{ github.sha }})"
+        body: "Built from https://gitlab.freedesktop.org/mesa/mesa/-/tree/${{ env.mesa-commit }}"
+        tag: "release-${{ github.sha }}"
+        artifacts: kosmickrisp-universal.zip
+        token: ${{ secrets.GITHUB_TOKEN }}
+
