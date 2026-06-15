@@ -119,7 +119,8 @@ ExternalProject_Add(${MESA_PROJECT_NAME_AARCH64}
         --cross-file=${MESA_CROSSFILES_DIR}/mesa-aarch64.ini
         -Dinstall-mesa-clc=true -Dinstall-precomp-compiler=true
         ${MESA_COMMON_CONFIGURE_ARGS}
-    BUILD_COMMAND meson compile -C ${MESA_BINARY_DIR_AARCH64} ${MESA_TARGETS_AARCH64}
+    BUILD_COMMAND ${CMAKE_COMMAND} -E env PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig --
+        meson compile -C ${MESA_BINARY_DIR_AARCH64} ${MESA_TARGETS_AARCH64}
     INSTALL_COMMAND cmake -E echo "Skipping install step."
     BUILD_BYPRODUCTS ${MESA_BYPRODUCTS_AARCH64}
     DEPENDS kosmickrisp-SPIRV-Tools
@@ -140,7 +141,8 @@ if (NOT KOSMICKRISP_ARCHITECTURE STREQUAL "aarch64")
             --cross-file=${MESA_CROSSFILES_DIR}/mesa-${KOSMICKRISP_ARCHITECTURE}.ini
             -Dmesa-clc=system -Dprecomp-compiler=system -Dspirv-tools=disabled
             ${MESA_COMMON_CONFIGURE_ARGS}
-        BUILD_COMMAND meson compile -C ${MESA_BINARY_DIR_TARGET} ${MESA_TARGETS_TARGET}
+        BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${MESA_CLC_PATH}:${MESA_VTN_BINDGEN2_PATH}:${MESA_KK_CLC_PATH}:$ENV{PATH} --
+            meson compile -C ${MESA_BINARY_DIR_TARGET} ${MESA_TARGETS_TARGET}
         INSTALL_COMMAND cmake -E echo "Skipping install step."
         BUILD_BYPRODUCTS ${MESA_BYPRODUCTS_TARGET}
         DEPENDS ${MESA_PROJECT_NAME_AARCH64}
