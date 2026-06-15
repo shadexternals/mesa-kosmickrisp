@@ -7,13 +7,6 @@ if (NOT APPLE)
     message(FATAL_ERROR "Unsupported operating system")
 endif()
 
-# Determine host architecture.
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(AARCH64)|(arm64)|(ARM64)")
-    set(KK_TOOLS_ARCHITECTURE "aarch64")
-else()
-    message(FATAL_ERROR "Unsupported host CPU architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
-endif()
-
 # Determine where to source architecture from.
 if (CMAKE_OSX_ARCHITECTURES)
     set(KK_BASE_TARGET_ARCHITECTURE "${CMAKE_OSX_ARCHITECTURES}")
@@ -37,6 +30,10 @@ if (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 26.0)
 endif()
 
+find_program(KK_LLVM_CONFIG REQUIRED
+    NAMES llvm-config
+    PATHS /opt/homebrew/opt/llvm/bin)
+
 include(ExternalProject)
 
 # ----- mesa -----
@@ -56,7 +53,6 @@ set(MESA_COMMON_CONFIGURE_ARGS
 set(MESA_BUILD_TYPE_TOOLS "release")
 set(MESA_PROJECT_NAME_TOOLS kosmickrisp-mesa-tools)
 set(MESA_TARGETS_TOOLS mesa_clc vtn_bindgen2 kk_clc)
-set(MESA_CROSS_FILE_TOOLS ${MESA_CROSSFILES_DIR}/mesa-${KK_TOOLS_ARCHITECTURE}.ini)
 set(MESA_BINARY_DIR_TOOLS ${MESA_BINARY_DIR}/build-tools)
 set(MESA_CLC_DIR_TOOLS "${MESA_BINARY_DIR_TOOLS}/src/compiler/clc")
 set(MESA_VTN_BINDGEN2_DIR_TOOLS "${MESA_BINARY_DIR_TOOLS}/src/compiler/spirv")
@@ -65,6 +61,8 @@ SET(MESA_BYPRODUCTS_TOOLS
     "${MESA_CLC_DIR_TOOLS}/kk_clc"
     "${MESA_VTN_BINDGEN2_DIR_TOOLS}/mesa_clc"
     "${MESA_KK_CLC_DIR_TOOLS}/vtn_bindgen2")
+set(MESA_ENVIRONMENT_TOOLS
+    LLVM_CONFIG=${KK_LLVM_CONFIG})
 
 # Target build configuration
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -89,12 +87,13 @@ set(MESA_ENVIRONMENT_TARGET
 ExternalProject_Add(${MESA_PROJECT_NAME_TOOLS}
     SOURCE_DIR ${MESA_SOURCE_DIR}
     BINARY_DIR ${MESA_BINARY_DIR_TOOLS}
-    CONFIGURE_COMMAND meson setup ${MESA_BINARY_DIR_TOOLS} ${MESA_SOURCE_DIR}
+    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env ${MESA_ENVIRONMENT_TOOLS} --
+        meson setup ${MESA_BINARY_DIR_TOOLS} ${MESA_SOURCE_DIR}
         --buildtype=${MESA_BUILD_TYPE_TOOLS}
-        --cross-file=${MESA_CROSS_FILE_TOOLS}
         -Dinstall-mesa-clc=true -Dinstall-precomp-compiler=true
         ${MESA_COMMON_CONFIGURE_ARGS}
-    BUILD_COMMAND meson compile -C ${MESA_BINARY_DIR_TOOLS} ${MESA_TARGETS_TOOLS}
+    BUILD_COMMAND ${CMAKE_COMMAND} -E env ${MESA_ENVIRONMENT_TOOLS} --
+        meson compile -C ${MESA_BINARY_DIR_TOOLS} ${MESA_TARGETS_TOOLS}
     INSTALL_COMMAND cmake -E echo "Skipping install step."
     BUILD_BYPRODUCTS ${MESA_BYPRODUCTS_TOOLS}
 )
