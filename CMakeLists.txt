@@ -29,6 +29,11 @@ else()
     message(FATAL_ERROR "Unsupported build CPU architecture: ${KOSMICKRISP_BASE_ARCHITECTURE}")
 endif()
 
+if (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    # Minimim requirement for KosmicKrisp
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 26.0)
+endif()
+
 cmake_host_system_information(RESULT NUM_CORES QUERY NUMBER_OF_LOGICAL_CORES)
 
 set(INSTALL_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/install-prefix)
@@ -49,6 +54,7 @@ ExternalProject_Add(kosmickrisp-SPIRV-Tools
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}
         -DCMAKE_OSX_ARCHITECTURES=arm64
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
         -DSPIRV-Headers_SOURCE_DIR=${SPIRV_HEADERS_SOURCE_DIR}
         -DSPIRV_SKIP_EXECUTABLES=ON
     BUILD_COMMAND cmake --build ${SPIRV_TOOLS_BINARY_DIR} --parallel${NUM_CORES}
@@ -62,6 +68,7 @@ set(MESA_CROSSFILES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/crossfiles)
 set(MESA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/externals/mesa)
 set(MESA_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/externals/mesa)
 
+set(MESA_COMMON_ENVIRONMENT MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET})
 set(MESA_COMMON_CONFIGURE_ARGS
     --prefer-static
     -Dplatforms=macos
@@ -109,17 +116,18 @@ else()
 endif()
 
 # Build either desired target, if aarch64, or the native tools for later.
+set(MESA_ENVIRONMENT_AARCH64 ${MESA_COMMON_ENVIRONMENT} PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig)
 ExternalProject_Add(${MESA_PROJECT_NAME_AARCH64}
     SOURCE_DIR ${MESA_SOURCE_DIR}
     BINARY_DIR ${MESA_BINARY_DIR_AARCH64}
-    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig --
+    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env ${MESA_ENVIRONMENT_AARCH64} --
         meson setup ${MESA_BINARY_DIR_AARCH64} ${MESA_SOURCE_DIR}
         --buildtype=${MESA_BUILD_TYPE_AARCH64}
         --prefix=${INSTALL_PREFIX}
         --cross-file=${MESA_CROSSFILES_DIR}/mesa-aarch64.ini
         -Dinstall-mesa-clc=true -Dinstall-precomp-compiler=true
         ${MESA_COMMON_CONFIGURE_ARGS}
-    BUILD_COMMAND ${CMAKE_COMMAND} -E env PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig --
+    BUILD_COMMAND ${CMAKE_COMMAND} -E env ${MESA_ENVIRONMENT_AARCH64} --
         meson compile -C ${MESA_BINARY_DIR_AARCH64} ${MESA_TARGETS_AARCH64}
     INSTALL_COMMAND cmake -E echo "Skipping install step."
     BUILD_BYPRODUCTS ${MESA_BYPRODUCTS_AARCH64}
@@ -132,16 +140,17 @@ if (NOT KOSMICKRISP_ARCHITECTURE STREQUAL "aarch64")
     set(MESA_KK_CLC_PATH "${MESA_BINARY_DIR_AARCH64}/src/kosmickrisp/clc")
 
     # Build for the desired target using native tools
+    set(MESA_ENVIRONMENT_TARGET ${MESA_COMMON_ENVIRONMENT} PATH=${MESA_CLC_PATH}:${MESA_VTN_BINDGEN2_PATH}:${MESA_KK_CLC_PATH}:$ENV{PATH})
     ExternalProject_Add(${MESA_PROJECT_NAME_TARGET}
         SOURCE_DIR ${MESA_SOURCE_DIR}
         BINARY_DIR ${MESA_BINARY_DIR_TARGET}
-        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env PATH=${MESA_CLC_PATH}:${MESA_VTN_BINDGEN2_PATH}:${MESA_KK_CLC_PATH}:$ENV{PATH} --
+        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env ${MESA_ENVIRONMENT_TARGET} --
             meson setup ${MESA_BINARY_DIR_TARGET} ${MESA_SOURCE_DIR}
             --buildtype=${MESA_BUILD_TYPE_TARGET}
             --cross-file=${MESA_CROSSFILES_DIR}/mesa-${KOSMICKRISP_ARCHITECTURE}.ini
             -Dmesa-clc=system -Dprecomp-compiler=system -Dspirv-tools=disabled
             ${MESA_COMMON_CONFIGURE_ARGS}
-        BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${MESA_CLC_PATH}:${MESA_VTN_BINDGEN2_PATH}:${MESA_KK_CLC_PATH}:$ENV{PATH} --
+        BUILD_COMMAND ${CMAKE_COMMAND} -E env ${MESA_ENVIRONMENT_TARGET} --
             meson compile -C ${MESA_BINARY_DIR_TARGET} ${MESA_TARGETS_TARGET}
         INSTALL_COMMAND cmake -E echo "Skipping install step."
         BUILD_BYPRODUCTS ${MESA_BYPRODUCTS_TARGET}
