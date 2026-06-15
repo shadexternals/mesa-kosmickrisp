@@ -30,7 +30,7 @@ jobs:
 
     - name: Install Build Dependencies
       run: |
-        brew install cmake meson pkg-config llvm spirv-llvm-translator libclc
+        brew install cmake meson pkg-config llvm spirv-tools spirv-llvm-translator libclc
         pip3 install --break-system-packages mako packaging pyyaml
 
     - name: Configure

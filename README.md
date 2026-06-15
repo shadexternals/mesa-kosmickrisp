@@ -6,7 +6,7 @@ Provides CMake build logic for compiling KosmicKrisp and the Vulkan loader on ma
 
 Install the required dependencies, e.g. with brew and pip:
 ```
-brew install cmake meson ninja pkg-config llvm spirv-llvm-translator libclc
+brew install cmake meson ninja pkg-config llvm spirv-tools spirv-llvm-translator libclc
 pip3 install --break-system-packages mako packaging pyyaml
 ```
 
