@@ -67,6 +67,8 @@ set(MESA_ENVIRONMENT_TOOLS
 # Target build configuration
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(MESA_BUILD_TYPE_TARGET "debug")
+elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    set(MESA_BUILD_TYPE_TARGET "debugoptimized")
 else()
     set(MESA_BUILD_TYPE_TARGET "release")
 endif()
